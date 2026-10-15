@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Index vs Raw Scan Lab</title>
+<style>
+  /* Layout: one narrow column that works one-handed on a phone; controls first, results below, code last. */
+  :root {
+    --bg: #f5f8f9;
+    --surface: #ffffff;
+    --fg: #17262b;
+    --muted: #55696f;
+    --line: #cfdadd;
+    --accent: #1f6f80;
+    --accent-fg: #ffffff;
+    --accent-soft: #dcecef;
+    --good: #12703a;
+    --bad: #b3261e;
+    --code-bg: #eaf0f2;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1a1d; --surface: #162428; --fg: #e4eef0; --muted: #9bb0b5; --line: #2a3d42;
+      --accent: #5fb7c9; --accent-fg: #07181c; --accent-soft: #1d3a41; --good: #6fd59a; --bad: #ff8f87; --code-bg: #0b1417;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1a1d; --surface: #162428; --fg: #e4eef0; --muted: #9bb0b5; --line: #2a3d42;
+    --accent: #5fb7c9; --accent-fg: #07181c; --accent-soft: #1d3a41; --good: #6fd59a; --bad: #ff8f87; --code-bg: #0b1417;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    padding-block: 20px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin: 0; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 4px 0 6px; text-wrap: balance; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  p { margin: 0 0 8px; }
+  .lead { color: var(--muted); }
+  section { min-width: 0; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  .sizes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+  button {
+    font: inherit; min-height: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--fg); cursor: pointer; padding: 6px 8px; font-variant-numeric: tabular-nums;
+  }
+  button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 700; }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+  button:disabled { opacity: .55; cursor: wait; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .actions button { flex: 1 1 140px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; color: var(--muted); }
+  .stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--accent-soft); white-space: nowrap; font-size: 12.5px; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  .ok { color: var(--good); font-weight: 700; }
+  .no { color: var(--bad); font-weight: 700; }
+  code, pre { font-family: var(--mono); font-size: 12.5px; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0 0; line-height: 1.45; }
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 700; min-height: 28px; }
+  .note { color: var(--muted); font-size: 13.5px; }
+  .empty { color: var(--muted); padding: 12px; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: background .12s, border-color .12s; } }
+  html { color-scheme: light; }
+  body { margin: 0; }
+  [hidden] { display: none !important; }
+</style>
+
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Laboratory #2 · Lesson 2</p>
+    <h1>Index vs. Raw Scan</h1>
+    <p class="lead">Runs the same five searches two ways on a growing collection: opening and reading every document (raw scan) and reading only the postings lists of an inverted index. Works on any phone browser, with nothing to install.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="h-controls">
+    <h2 id="h-controls">1. Choose a collection size</h2>
+    <div class="sizes" id="sizes" role="group" aria-label="Number of documents"></div>
+    <div class="actions">
+      <button class="primary" id="run">Run the searches</button>
+      <button id="reset">Clear my runs</button>
+    </div>
+    <p class="note" style="margin-top:10px">The ten announcements (D1 to D10) are repeated to reach the chosen size, so the content stays the same and only the amount grows. Run each size three times for your Part 4B table.</p>
+  </section>
+
+  <section aria-labelledby="h-results">
+    <h2 id="h-results">2. Search results and timing</h2>
+    <p class="stats" id="stats" aria-live="polite"><span>Press <b>Run the searches</b> to start.</span></p>
+    <div class="scroll"><table id="results">
+      <thead><tr>
+        <th>Query</th><th>Hits (raw scan)</th><th>Hits (index)</th><th>Same result?</th>
+        <th class="num">Raw scan (ms)</th><th class="num">Index (ms)</th><th class="num">Raw ÷ Index</th><th class="num">Terms checked by raw scan</th>
+      </tr></thead>
+      <tbody id="results-body"><tr><td colspan="8" class="empty">No results yet.</td></tr></tbody>
+    </table></div>
+    <p class="note" style="margin-top:8px" id="timernote">Each time is the average of several repeats inside the page, because phone browsers round their clocks coarsely. At 10 or 1,000 documents the times are tiny, so the 10,000 and 50,000 sizes show the difference best.</p>
+  </section>
+
+  <section aria-labelledby="h-log">
+    <h2 id="h-log">3. Your runs at this size (for the Part 4B table)</h2>
+    <div class="scroll"><table id="log">
+      <thead><tr><th>Run</th><th>Query</th><th class="num">Raw scan (ms)</th><th class="num">Index (ms)</th><th class="num">Raw ÷ Index</th></tr></thead>
+      <tbody id="log-body"><tr><td colspan="5" class="empty">Run the same size three times, then copy the median row into your worksheet.</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <section id="index-section" hidden aria-labelledby="h-index">
+    <h2 id="h-index">4. The inverted index (10-document view)</h2>
+    <p class="note">Compare this with the index you built by hand in Part 2. Postings are written DocID:frequency.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Term</th><th class="num">Doc. freq.</th><th>Postings</th></tr></thead>
+      <tbody id="index-body"></tbody>
+    </table></div>
+  </section>
+
+  <details id="code-view">
+    <summary>View the code (Part 4C)</summary>
+    <p class="note" style="margin-top:8px">This is the program running this page. Find the sections numbered 3 (build the inverted index) and 5 (run every query both ways).</p>
+    <pre id="code-pre"></pre>
+  </details>
+</main>
+
+<script id="lab-js">
+/* ===== Laboratory #2: Inverted Index vs. Raw File Scan ===== */
+
+/* ---------- 1. The ten sample documents ---------- */
+var SEED = [
+  "The enrollment period for the first semester starts on Monday. Students must submit their requirements to the registrar.",
+  "The library will extend its hours during the midterm examination week. Students may borrow books for two days.",
+  "Registrar announces the schedule for the release of grades. Students with unpaid fees must visit the cashier first.",
+  "The ICT department will hold a database workshop on Friday. Students interested in the workshop must register online.",
+  "Scholarship applications are now open. Students must submit their grades and enrollment form to the scholarship office.",
+  "The cashier will be closed on Monday for system maintenance. Students may pay their fees online instead.",
+  "Midterm examination schedule is posted at the library and the registrar office. Students must bring their ID.",
+  "The library database is under maintenance. Students may still borrow books at the front desk.",
+  "Online enrollment is now available for returning students. Unpaid fees must be settled at the cashier before enrollment.",
+  "The ICT department announces a workshop on web development. Students must register before Friday."
+];
+var STOP = new Set(("a an and are at be before by during first for from in instead is its may must now of on or " +
+  "still the their to under will with").split(" "));
+
+/* ---------- 2. Text preparation ---------- */
+function tokens(text) {
+  return text.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w && !STOP.has(w); });
+}
+
+function makeCollection(n) {
+  var docs = new Array(n);
+  for (var i = 0; i < n; i++) { docs[i] = SEED[i % 10]; }   /* document IDs are 1..n */
+  return docs;
+}
+
+/* ---------- 3. Build the inverted index ---------- */
+function buildIndex(docs) {
+  var index = new Map();                       /* term -> { ids: [docIds], freq: [counts] } */
+  for (var i = 0; i < docs.length; i++) {
+    var id = i + 1, tk = tokens(docs[i]);
+    for (var j = 0; j < tk.length; j++) {
+      var e = index.get(tk[j]);
+      if (!e) { e = { ids: [], freq: [] }; index.set(tk[j], e); }
+      var last = e.ids.length - 1;
+      if (last >= 0 && e.ids[last] === id) { e.freq[last]++; } else { e.ids.push(id); e.freq.push(1); }
+    }
+  }
+  return index;
+}
+function postings(index, term) { var e = index.get(term); return e ? e.ids : []; }
+
+/* Boolean operations on postings lists (sorted arrays of document IDs) */
+function AND(a, b) { var s = new Set(b); return a.filter(function (x) { return s.has(x); }); }
+function NOT(a, b) { var s = new Set(b); return a.filter(function (x) { return !s.has(x); }); }
+function OR(a, b) {
+  var out = [], i = 0, j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { out.push(a[i]); i++; j++; }
+    else if (a[i] < b[j]) { out.push(a[i++]); } else { out.push(b[j++]); }
+  }
+  while (i < a.length) { out.push(a[i++]); }
+  while (j < b.length) { out.push(b[j++]); }
+  return out;
+}
+
+/* ---------- 4. The queries: a raw-scan test and an index version for each ---------- */
+var QUERIES = [
+  { name: "library",
+    raw: function (t) { return t.has("library"); },
+    idx: function (ix) { return postings(ix, "library"); } },
+  { name: "cashier AND fees",
+    raw: function (t) { return t.has("cashier") && t.has("fees"); },
+    idx: function (ix) { return AND(postings(ix, "cashier"), postings(ix, "fees")); } },
+  { name: "workshop OR database",
+    raw: function (t) { return t.has("workshop") || t.has("database"); },
+    idx: function (ix) { return OR(postings(ix, "workshop"), postings(ix, "database")); } },
+  { name: "enrollment AND NOT online",
+    raw: function (t) { return t.has("enrollment") && !t.has("online"); },
+    idx: function (ix) { return NOT(postings(ix, "enrollment"), postings(ix, "online")); } },
+  { name: "(library OR registrar) AND midterm",
+    raw: function (t) { return (t.has("library") || t.has("registrar")) && t.has("midterm"); },
+    idx: function (ix) { return AND(OR(postings(ix, "library"), postings(ix, "registrar")), postings(ix, "midterm")); } }
+];
+
+/* ---------- 5. Run every query both ways ---------- */
+function rawScan(docs, q) {
+  /* Raw scan: open every document, clean it, then look for the words */
+  var hits = [], wordsRead = 0;
+  for (var i = 0; i < docs.length; i++) {
+    var tk = tokens(docs[i]);
+    wordsRead += tk.length;
+    if (q.raw(new Set(tk))) { hits.push(i + 1); }
+  }
+  return { hits: hits, wordsRead: wordsRead };
+}
+function indexSearch(index, q) {
+  /* Index search: read only the postings lists of the query terms, then combine them */
+  return q.idx(index);
+}
+function repsFor(n) { return n <= 10 ? 200 : n <= 1000 ? 20 : n <= 10000 ? 5 : 2; }
+
+function runAll(n, now) {
+  var docs = makeCollection(n);
+  var t0 = now();
+  var index = buildIndex(docs);
+  var buildMs = now() - t0, reps = repsFor(n), rows = [];
+  QUERIES.forEach(function (q) {
+    var raw, idxHits, k;
+    var s = now();
+    for (k = 0; k < reps; k++) { raw = rawScan(docs, q); }
+    var rawMs = (now() - s) / reps;
+    s = now();
+    for (k = 0; k < reps; k++) { idxHits = indexSearch(index, q); }
+    var idxMs = (now() - s) / reps;
+    rows.push({ name: q.name, rawHits: raw.hits, idxHits: idxHits,
+                same: JSON.stringify(raw.hits) === JSON.stringify(idxHits),
+                rawMs: rawMs, idxMs: idxMs, wordsRead: raw.wordsRead });
+  });
+  return { n: n, index: index, buildMs: buildMs, rows: rows, reps: reps };
+}
+/* ===== end of core program ===== */
+
+/* ---------- Page controls (display only) ---------- */
+(function () {
+  if (typeof document === "undefined") { return; }
+  var SIZES = [10, 1000, 10000, 50000], selected = 10, runs = {};
+  var sizesEl = document.getElementById("sizes");
+  function fmt(x) { return x < 0.001 ? "< 0.001" : x.toFixed(3); }
+  function showHits(a) { return a.length > 12 ? a.length.toLocaleString("en-US") + " docs" : (a.length ? a.join(", ") : "none"); }
+  function median(a) { var s = a.slice().sort(function (x, y) { return x - y; }); return s[Math.floor(s.length / 2)]; }
+  function td(text, cls) { var c = document.createElement("td"); c.textContent = text; if (cls) { c.className = cls; } return c; }
+
+  SIZES.forEach(function (n) {
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = n.toLocaleString("en-US");
+    b.setAttribute("aria-pressed", n === selected ? "true" : "false");
+    b.addEventListener("click", function () {
+      selected = n;
+      Array.prototype.forEach.call(sizesEl.children, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+      renderLog();
+    });
+    sizesEl.appendChild(b);
+  });
+
+  function renderResults(res) {
+    var stats = document.getElementById("stats");
+    stats.innerHTML = "";
+    [["Documents", res.n.toLocaleString("en-US")], ["Terms in the index", String(res.index.size)],
+     ["Index build time", res.buildMs.toFixed(2) + " ms"], ["Repeats per timing", String(res.reps)]].forEach(function (p) {
+      var s = document.createElement("span"); s.append(p[0] + ": "); var b = document.createElement("b"); b.textContent = p[1]; s.appendChild(b); stats.appendChild(s);
+    });
+    var body = document.getElementById("results-body"); body.innerHTML = "";
+    res.rows.forEach(function (r) {
+      var tr = document.createElement("tr");
+      var q = document.createElement("td"); var c = document.createElement("code"); c.textContent = r.name; q.appendChild(c); tr.appendChild(q);
+      tr.appendChild(td(showHits(r.rawHits))); tr.appendChild(td(showHits(r.idxHits)));
+      tr.appendChild(td(r.same ? "Yes" : "NO", r.same ? "ok" : "no"));
+      tr.appendChild(td(fmt(r.rawMs), "num")); tr.appendChild(td(fmt(r.idxMs), "num"));
+      tr.appendChild(td(r.idxMs > 0 ? (r.rawMs / r.idxMs).toFixed(1) : "n/a", "num"));
+      tr.appendChild(td(r.wordsRead.toLocaleString("en-US"), "num"));
+      body.appendChild(tr);
+    });
+    var sec = document.getElementById("index-section"), ib = document.getElementById("index-body");
+    sec.hidden = res.n > 10; ib.innerHTML = "";
+    if (res.n <= 10) {
+      Array.from(res.index.keys()).sort().forEach(function (term) {
+        var e = res.index.get(term), tr = document.createElement("tr");
+        var parts = e.ids.map(function (id, i) { return id + ":" + e.freq[i]; });
+        tr.appendChild(td(term)); tr.appendChild(td(String(e.ids.length), "num")); tr.appendChild(td(parts.join(", ")));
+        ib.appendChild(tr);
+      });
+    }
+  }
+
+  function renderLog() {
+    var body = document.getElementById("log-body"); body.innerHTML = "";
+    var list = runs[selected] || [];
+    if (!list.length) {
+      var tr0 = document.createElement("tr"), c0 = td("No runs yet at " + selected.toLocaleString("en-US") + " documents. Run the same size three times, then copy the median row into your worksheet.", "empty");
+      c0.colSpan = 5; tr0.appendChild(c0); body.appendChild(tr0); return;
+    }
+    list.forEach(function (run, i) {
+      [1, 4].forEach(function (qi, k) {
+        var r = run.rows[qi], tr = document.createElement("tr");
+        tr.appendChild(td(k === 0 ? "Run " + (i + 1) : "")); tr.appendChild(td(r.name));
+        tr.appendChild(td(fmt(r.rawMs), "num")); tr.appendChild(td(fmt(r.idxMs), "num"));
+        tr.appendChild(td(r.idxMs > 0 ? (r.rawMs / r.idxMs).toFixed(1) : "n/a", "num"));
+        body.appendChild(tr);
+      });
+    });
+    if (list.length >= 3) {
+      var last3 = list.slice(-3);
+      [1, 4].forEach(function (qi, k) {
+        var rawM = median(last3.map(function (x) { return x.rows[qi].rawMs; })), idxM = median(last3.map(function (x) { return x.rows[qi].idxMs; }));
+        var tr = document.createElement("tr"); tr.style.fontWeight = "700";
+        tr.appendChild(td(k === 0 ? "Median of last 3" : "")); tr.appendChild(td(QUERIES[qi].name));
+        tr.appendChild(td(fmt(rawM), "num")); tr.appendChild(td(fmt(idxM), "num"));
+        tr.appendChild(td(idxM > 0 ? (rawM / idxM).toFixed(1) : "n/a", "num"));
+        body.appendChild(tr);
+      });
+    }
+  }
+
+  var runBtn = document.getElementById("run");
+  runBtn.addEventListener("click", function () {
+    runBtn.disabled = true; runBtn.textContent = "Running...";
+    setTimeout(function () {
+      var res = runAll(selected, function () { return performance.now(); });
+      (runs[selected] = runs[selected] || []).push(res);
+      renderResults(res); renderLog();
+      runBtn.disabled = false; runBtn.textContent = "Run the searches";
+    }, 30);
+  });
+  document.getElementById("reset").addEventListener("click", function () { runs = {}; renderLog(); });
+  document.getElementById("code-pre").textContent = document.getElementById("lab-js").textContent.trim();
+
+  /* Open in a working state: show the 10-document result right away */
+  var first = runAll(10, function () { return performance.now(); });
+  renderResults(first); renderLog();
+})();
+</script>
+</body>
+</html>
